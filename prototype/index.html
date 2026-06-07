@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8' />
+<meta name='viewport' content='width=device-width, initial-scale=1.0' />
+<title>Hearthshade — Core Loop Prototype</title>
+<style>
+  :root{
+    --warm:#e8b06a; --warm2:#caa15a; --dark:#0b0d12; --panel:#14171f; --ink:#e9e2d0;
+    --good:#7fd18a; --bad:#d1607f; --gloam:#3a2f4a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif}
+  body{background:#06070a;color:var(--ink);display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}
+  #wrap{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:1180px}
+  canvas{background:#0b0d12;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.6);image-rendering:auto}
+  #side{width:300px;display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--panel);border:1px solid #232838;border-radius:10px;padding:14px}
+  h1{font-size:20px;letter-spacing:.5px} h1 small{display:block;font-weight:400;color:#9aa0b0;font-size:12px;margin-top:4px}
+  .bar{height:14px;border-radius:8px;background:#222736;overflow:hidden;margin-top:6px}
+  .bar>i{display:block;height:100%;transition:width .2s}
+  .row{display:flex;justify-content:space-between;font-size:13px;margin:8px 0 2px}
+  .stat{display:flex;gap:10px;flex-wrap:wrap;font-size:13px}
+  .stat b{color:#fff}
+  .pill{background:#1d2230;border:1px solid #2a3043;border-radius:20px;padding:4px 10px;font-size:12px}
+  #log{height:110px;overflow:auto;font-size:12px;line-height:1.5;color:#b9bfce}
+  #log div{padding:2px 0;border-bottom:1px solid #1a1e2a}
+  kbd{background:#222a3a;border:1px solid #39425a;border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:11px}
+  .keys{font-size:12px;color:#aeb4c4;line-height:1.9}
+  #phaseTag{font-weight:700}
+  button{cursor:pointer;background:var(--warm);color:#2a1d08;border:0;border-radius:8px;padding:9px 12px;font-weight:700}
+  button.secondary{background:#222a3a;color:var(--ink)}
+  .flex{display:flex;gap:8px}
+</style>
+</head>
+<body>
+<div id='wrap'>
+  <canvas id='game' width='720' height='560'></canvas>
+  <div id='side'>
+    <div class='card'>
+      <h1>HEARTHSHADE <small>Core-loop prototype — “Tend the light. Mind the dark.”</small></h1>
+    </div>
+    <div class='card'>
+      <div class='row'><span>Phase</span><span id='phaseTag'>Morning</span></div>
+      <div class='bar'><i id='timeBar' style='width:0%;background:linear-gradient(90deg,#e8b06a,#caa15a)'></i></div>
+      <div class='row'><span>Resolve (nerve)</span><span id='resolveVal'>100</span></div>
+      <div class='bar'><i id='resolveBar' style='width:100%;background:linear-gradient(90deg,#7fd18a,#bfe6a8)'></i></div>
+      <div class='row'><span>Homestead light held</span><span id='holdVal'>100%</span></div>
+      <div class='bar'><i id='holdBar' style='width:100%;background:linear-gradient(90deg,#e8b06a,#ffd9a0)'></i></div>
+    </div>
+    <div class='card'>
+      <div class='stat'>
+        <span class='pill'>Day <b id='dayVal'>1</b></span>
+        <span class='pill'>🛢 Oil <b id='oilVal'>6</b></span>
+        <span class='pill'>🌱 Seeds <b id='seedVal'>5</b></span>
+        <span class='pill'>🪙 Coin <b id='coinVal'>0</b></span>
+        <span class='pill'>🏮 Lanterns <b id='lanternVal'>2</b></span>
+      </div>
+    </div>
+    <div class='card keys'>
+      <b>Controls</b><br/>
+      <kbd>W A S D</kbd> / arrows — move<br/>
+      <kbd>E</kbd> — interact (plant • harvest • refuel lantern • buy at market)<br/>
+      <kbd>Q</kbd> — place a lantern (1 lantern + 1 oil)<br/>
+      <kbd>Space</kbd> — rest by hearth (restore Resolve, day only)<br/>
+      <div class='flex' style='margin-top:10px'>
+        <button id='startBtn'>Start day</button>
+        <button id='resetBtn' class='secondary'>Reset</button>
+      </div>
+    </div>
+    <div class='card'><div id='log'></div></div>
+  </div>
+</div>
+<script>
+/* ============================================================================
+   HEARTHSHADE — self-contained HTML5 Canvas prototype (vanilla JS, no deps).
+   Demonstrates the studio's #1 niche pick: dark-cozy life-sim.
+   Core thesis modelled here: ONE toolbox, TWO tones. Lanterns/fire/food are
+   cozy by day and your survival layer at night. Dread is a managed RESOURCE
+   (Gloam vs Light + Resolve), never a combat/health bar.
+   ========================================================================== */
+(() => {
+  const cv = document.getElementById('game'), cx = cv.getContext('2d');
+  const COLS = 15, ROWS = 11, T = 48;               // tile grid
+  const OX = (cv.width - COLS*T)/2, OY = (cv.height - ROWS*T)/2;
+
+  // ---- tile types ----------------------------------------------------------
+  const GRASS=0, SOIL=1, HEARTH=2, MARKET=3, WATER=4;
+  let map, gloam, light, crops, lanterns, player, time, phaseIdx, day, stats, alive, dawnSurvived;
+
+  // phase machine: [name, seconds, isNight]
+  const PHASES = [
+    ['Morning', 6, false],
+    ['Day',     10, false],
+    ['Dusk',    4, false],
+    ['Night',   16, true],
+    ['Dawn',    4, false],
+  ];
+
+  const HEARTH_POS = {x:7, y:5};
+  const MARKET_POS = {x:1, y:1};
+
+  function reset(){
+    map = []; gloam = []; light = []; crops = [];
+    for(let y=0;y<ROWS;y++){ map[y]=[]; gloam[y]=[]; light[y]=[]; crops[y]=[];
+      for(let x=0;x<COLS;x++){
+        let t = GRASS;
+        if(x===0||y===0||x===COLS-1||y===ROWS-1) t = WATER;     // dark treeline edge
+        map[y][x]=t; gloam[y][x]=0; light[y][x]=0; crops[y][x]=null;
+      }
+    }
+    // a tidy soil plot
+    for(let y=3;y<=7;y++) for(let x=9;x<=12;x++) map[y][x]=SOIL;
+    map[HEARTH_POS.y][HEARTH_POS.x]=HEARTH;
+    map[MARKET_POS.y][MARKET_POS.x]=MARKET;
+    lanterns = [ {x:5,y:5,oil:3}, {x:9,y:5,oil:3} ];   // two starter lanterns w/ oil
+    player = {x:7, y:6, px:7*T, py:6*T};
+    time=0; phaseIdx=0; day=1; alive=true; dawnSurvived=false;
+    stats = {resolve:100, oil:6, seeds:5, coin:0, lanterns:2, hold:100};
+    log('A new day in the valley. Plant, light the lanterns, and outlast the dark.');
+    paused=true; updateHUD();
+  }
+
+  // ---- logging -------------------------------------------------------------
+  const logEl = document.getElementById('log');
+  function log(m){ const d=document.createElement('div'); d.textContent=m; logEl.prepend(d);
+    while(logEl.children.length>40) logEl.lastChild.remove(); }
+
+  // ---- input ---------------------------------------------------------------
+  const keys = {};
+  addEventListener('keydown', e=>{
+    keys[e.key.toLowerCase()]=true;
+    if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
+    if(paused) return;
+    const k=e.key.toLowerCase();
+    if(k==='e') interact();
+    if(k==='q') placeLantern();
+    if(k===' ') restAtHearth();
+  });
+  addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+  let moveCooldown=0;
+  function handleMove(dt){
+    if(moveCooldown>0){ moveCooldown-=dt; return; }
+    let dx=0,dy=0;
+    if(keys['w']||keys['arrowup'])dy=-1;
+    else if(keys['s']||keys['arrowdown'])dy=1;
+    else if(keys['a']||keys['arrowleft'])dx=-1;
+    else if(keys['d']||keys['arrowright'])dx=1;
+    if(dx||dy){
+      const nx=player.x+dx, ny=player.y+dy;
+      if(nx>=0&&ny>=0&&nx<COLS&&ny<ROWS&&map[ny][nx]!==WATER){
+        player.x=nx; player.y=ny; moveCooldown=0.12;
+      }
+    }
+  }
+
+  // ---- actions -------------------------------------------------------------
+  function tileFront(){ return {x:player.x, y:player.y}; }   // act on current tile/neighbours
+  function nearby(px,py){ return Math.abs(px-player.x)<=1 && Math.abs(py-player.y)<=1; }
+
+  function interact(){
+    const x=player.x, y=player.y;
+    // market
+    if(nearby(MARKET_POS.x,MARKET_POS.y)){
+      // sell nothing here; market = buy oil with coin
+      if(stats.coin>=3){ stats.coin-=3; stats.oil++; log('Bought a flask of lantern oil (-3 coin).'); }
+      else log('The market wants 3 coin for oil. Sell more crops by day.');
+      updateHUD(); return;
+    }
+    // refuel a lantern on/adjacent
+    const lan = lanterns.find(l=>Math.abs(l.x-x)<=1&&Math.abs(l.y-y)<=1);
+    if(lan && stats.oil>0){ stats.oil--; lan.oil=Math.min(6,lan.oil+3); log('Refueled a lantern (+3 oil). The light steadies.'); updateHUD(); return; }
+    // farm
+    if(map[y][x]===SOIL){
+      const c=crops[y][x];
+      if(!c && stats.seeds>0){ stats.seeds--; crops[y][x]={stage:0,grow:0,withered:false}; log('Planted a seed.'); }
+      else if(c && c.stage>=3 && !c.withered){ crops[y][x]=null; const v=4; stats.coin+=v; log('Harvested a ripe crop (+'+v+' coin).'); }
+      else if(c && c.withered){ crops[y][x]=null; log('Cleared a crop the Gloam withered overnight.'); }
+      else if(c) log('Still growing — needs daylight.');
+      updateHUD(); return;
+    }
+    log('Nothing to tend here.');
+  }
+
+  function placeLantern(){
+    const x=player.x,y=player.y;
+    if(map[y][x]===WATER||map[y][x]===HEARTH){ log('Cannot place a lantern there.'); return; }
+    if(lanterns.some(l=>l.x===x&&l.y===y)){ log('A lantern already stands here.'); return; }
+    if(stats.lanterns>0 && stats.oil>0){ stats.lanterns--; stats.oil--; lanterns.push({x,y,oil:4});
+      log('Placed a lantern. Its glow pushes the dark back.'); }
+    else log('Need 1 spare lantern and 1 oil to place one.');
+    updateHUD();
+  }
+
+  function restAtHearth(){
+    const isNight = PHASES[phaseIdx][2];
+    if(isNight){ log('Too tense to rest now — keep the lights fed until dawn.'); return; }
+    if(nearby(HEARTH_POS.x,HEARTH_POS.y)){ stats.resolve=Math.min(100,stats.resolve+18);
+      log('You sit by the hearth a while. Resolve restored.'); updateHUD(); }
+    else log('Find the hearth (center) to rest.');
+  }
+
+  // ---- lighting model ------------------------------------------------------
+  function computeLight(){
+    for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) light[y][x]=0;
+    const sources = [{x:HEARTH_POS.x,y:HEARTH_POS.y,r:2.6,p:1}];
+    for(const l of lanterns) if(l.oil>0) sources.push({x:l.x,y:l.y,r:1.9,p:0.9});
+    for(const s of sources){
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+        const d=Math.hypot(x-s.x,y-s.y);
+        if(d<=s.r){ const v=s.p*(1-d/s.r); if(v>light[y][x]) light[y][x]=v; }
+      }
+    }
+  }
+
+  // ---- gloam (dread) simulation -------------------------------------------
+  let gloamTick=0;
+  function updateGloam(dt, isNight){
+    computeLight();
+    gloamTick+=dt;
+    const STEP=0.45;
+    if(gloamTick<STEP) return; gloamTick=0;
+    const next = gloam.map(r=>r.slice());
+    for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+      const lit = light[y][x];
+      if(!isNight){
+        // daylight & dawn burn the gloam back
+        next[y][x]=Math.max(0, gloam[y][x]-0.5);
+        continue;
+      }
+      // night: gloam wants to fill darkness; spreads from edges / gloamy neighbours
+      let neigh=0;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=COLS||ny>=ROWS) { neigh=Math.max(neigh,1); continue; } // map edge = source
+        neigh=Math.max(neigh,gloam[ny][nx]);
+      }
+      const darkness=Math.max(0,1-lit*1.4);
+      if(lit>0.25){ next[y][x]=Math.max(0, gloam[y][x]-0.6*lit); }      // light pushes back
+      else if(neigh>0.25){ next[y][x]=Math.min(1, gloam[y][x]+0.22*darkness*neigh + 0.05); }
+      // wither crops sitting in deep gloam
+      if(crops[y][x] && next[y][x]>0.6 && !crops[y][x].withered){ crops[y][x].withered=true; }
+    }
+    gloam=next;
+  }
+
+  // ---- crops grow in daylight ---------------------------------------------
+  function updateCrops(dt, isNight){
+    if(isNight) return;
+    for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+      const c=crops[y][x]; if(c&&!c.withered&&c.stage<3){ c.grow+=dt; if(c.grow>3){ c.grow=0; c.stage++; } }
+    }
+  }
+
+  // ---- phase / time machine ------------------------------------------------
+  function advancePhase(){
+    phaseIdx=(phaseIdx+1)%PHASES.length; time=0;
+    const [name,, isNight]=PHASES[phaseIdx];
+    if(name==='Dusk') log('The light is going. Birds fall quiet — feed your lanterns and bank the fire.');
+    if(name==='Night') log('Night. The Gloam seeps from the treeline. Hold the light.');
+    if(name==='Dawn'){ log('Dawn breaks. The dark recedes.'); }
+    if(name==='Morning'){
+      day++; dawnSurvived=true;
+      // burn off oil cost / morning cleanup summary
+      let withered=0; for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++) if(crops[y][x]&&crops[y][x].withered) withered++;
+      log('— Day '+day+' begins. '+(withered?('Gloam withered '+withered+' crop(s) overnight.'):'The homestead held through the night.'));
+      stats.resolve=Math.min(100,stats.resolve+10);
+    }
+    updateHUD();
+  }
+
+  // ---- main loop -----------------------------------------------------------
+  let last=performance.now(), paused=true;
+  function frame(now){
+    const dt=Math.min(0.05,(now-last)/1000); last=now;
+    if(!paused && alive){
+      handleMove(dt);
+      const [name,dur,isNight]=PHASES[phaseIdx];
+      time+=dt; if(time>=dur) advancePhase();
+      updateGloam(dt,isNight);
+      updateCrops(dt,isNight);
+      // Resolve: drains if player stands in darkness at night
+      computeLight();
+      const lp=light[player.y][player.x];
+      if(isNight){
+        if(lp<0.2){ stats.resolve-=12*dt; }                 // exposed to the dark
+        else { stats.resolve-=1.5*dt; }                     // tense even in light
+      } else if(name!=='Dusk'){ stats.resolve=Math.min(100,stats.resolve+3*dt); }
+      // homestead 'hold' = fraction of interior tiles free of deep gloam
+      let interior=0, held=0;
+      for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){ interior++; if(gloam[y][x]<0.6) held++; }
+      stats.hold = Math.round(100*held/interior);
+      // oil burn for lit lanterns at night
+      if(isNight){ for(const l of lanterns){ if(l.oil>0) l.oil-=0.35*dt; if(l.oil<0)l.oil=0; } }
+      if(stats.resolve<=0){ loseThread(); }
+      updateHUD();
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function loseThread(){
+    alive=false; paused=true;
+    log('Your nerve fails — you lose the thread of the night and wake at the hearth. (Melancholy, not death.)');
+    setTimeout(()=>{ // soft reset to morning, keep coins, lose night progress
+      stats.resolve=70; phaseIdx=0; time=0; alive=true;
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){ gloam[y][x]=0; if(crops[y][x]&&crops[y][x].withered) crops[y][x]=null; }
+      log('You gather yourself by the morning fire and begin again.'); paused=false; updateHUD();
+    },1800);
+  }
+
+  // ---- rendering -----------------------------------------------------------
+  function phaseAmbient(){
+    const [name,dur,isNight]=PHASES[phaseIdx];
+    const t = time/dur;
+    if(name==='Morning') return lerpCol([22,26,34],[40,38,40], t)        // cool→neutral
+    if(name==='Day')     return [44,40,40];
+    if(name==='Dusk')    return lerpCol([44,40,40],[20,16,28], t);       // warm→bruised
+    if(name==='Night')   return [9,9,16];
+    if(name==='Dawn')    return lerpCol([16,14,24],[28,30,38], t);
+  }
+  function lerpCol(a,b,t){ return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t]; }
+
+  function render(){
+    const amb=phaseAmbient();
+    cx.fillStyle=`rgb(${amb[0]|0},${amb[1]|0},${amb[2]|0})`;
+    cx.fillRect(0,0,cv.width,cv.height);
+    const isNight=PHASES[phaseIdx][2];
+    if(!paused) computeLight();
+
+    for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+      const sx=OX+x*T, sy=OY+y*T, t=map[y][x], lit=light[y][x]||0;
+      // base tile
+      let base;
+      if(t===WATER) base='#0a0c14';
+      else if(t===SOIL) base='#3a2a1d';
+      else if(t===HEARTH) base='#2a1c14';
+      else if(t===MARKET) base='#243042';
+      else base='#1e2a1c';
+      cx.fillStyle=base; cx.fillRect(sx,sy,T-1,T-1);
+
+      // daytime grass warmth
+      if(!isNight && t===GRASS){ cx.fillStyle='rgba(120,150,90,0.10)'; cx.fillRect(sx,sy,T-1,T-1); }
+
+      // light pool (warm)
+      if(lit>0){ cx.fillStyle=`rgba(232,176,106,${0.10+lit*0.5})`; cx.fillRect(sx,sy,T-1,T-1); }
+
+      // gloam overlay (dread)
+      const g=gloam[y][x]||0;
+      if(g>0.02){ cx.fillStyle=`rgba(28,18,40,${Math.min(0.92,g)})`; cx.fillRect(sx,sy,T-1,T-1);
+        if(g>0.5){ cx.fillStyle=`rgba(70,40,90,${(g-0.5)*0.5})`; cx.fillRect(sx,sy,T-1,T-1); } }
+
+      // crops
+      const c=crops[y][x];
+      if(c){ const cxp=sx+T/2, cyp=sy+T*0.7;
+        cx.fillStyle = c.withered? '#5b5340' : ['#6b8f3a','#7fae3f','#9ccb53','#ffd75e'][c.stage];
+        const r=4+c.stage*3; cx.beginPath(); cx.arc(cxp,cyp,r,0,7); cx.fill();
+        cx.fillStyle='#3c2a18'; cx.fillRect(cxp-1,cyp,2,8);
+      }
+      // hearth glyph
+      if(t===HEARTH){ cx.fillStyle='#e8b06a'; cx.beginPath(); cx.arc(sx+T/2,sy+T/2,9,0,7); cx.fill();
+        cx.fillStyle='#ffe6b0'; cx.beginPath(); cx.arc(sx+T/2,sy+T/2-2,4,0,7); cx.fill(); }
+      if(t===MARKET){ cx.fillStyle='#8fb6e6'; cx.fillRect(sx+10,sy+12,T-21,T-22); cx.fillStyle='#243042'; cx.fillRect(sx+14,sy+18,8,8);}
+    }
+
+    // lanterns
+    for(const l of lanterns){ const sx=OX+l.x*T, sy=OY+l.y*T;
+      cx.fillStyle = l.oil>0? '#ffcf7a':'#5a5340';
+      cx.beginPath(); cx.arc(sx+T/2,sy+T/2,6,0,7); cx.fill();
+      cx.strokeStyle='#7a5a2a'; cx.beginPath(); cx.moveTo(sx+T/2,sy+8); cx.lineTo(sx+T/2,sy+T/2-6); cx.stroke();
+      // tiny oil pips
+      cx.fillStyle='#1b1f2b'; cx.fillRect(sx+8,sy+T-10,T-17,4);
+      cx.fillStyle='#e8b06a'; cx.fillRect(sx+8,sy+T-10,(T-17)*Math.min(1,l.oil/6),4);
+    }
+
+    // player
+    const px=OX+player.x*T, py=OY+player.y*T;
+    cx.fillStyle='#f4ead2'; cx.beginPath(); cx.arc(px+T/2,py+T/2-2,9,0,7); cx.fill();
+    cx.fillStyle='#caa15a'; cx.fillRect(px+T/2-7,py+T/2+4,14,9);
+    // soft player aura so you're never totally invisible
+    const grd=cx.createRadialGradient(px+T/2,py+T/2,4,px+T/2,py+T/2,26);
+    grd.addColorStop(0,'rgba(244,234,210,0.18)'); grd.addColorStop(1,'rgba(244,234,210,0)');
+    cx.fillStyle=grd; cx.fillRect(px-14,py-14,T+28,T+28);
+
+    // night vignette
+    if(isNight){ const v=cx.createRadialGradient(cv.width/2,cv.height/2,120,cv.width/2,cv.height/2,460);
+      v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,0.75)'); cx.fillStyle=v; cx.fillRect(0,0,cv.width,cv.height); }
+
+    if(paused){ cx.fillStyle='rgba(6,7,10,0.55)'; cx.fillRect(0,0,cv.width,cv.height);
+      cx.fillStyle='#e9e2d0'; cx.font='600 22px Segoe UI,sans-serif'; cx.textAlign='center';
+      cx.fillText('Press “Start day” — keep the homestead lit until dawn', cv.width/2, cv.height/2);
+      cx.font='13px Segoe UI,sans-serif'; cx.fillStyle='#9aa0b0';
+      cx.fillText('Cozy by day · managed dread by night · the same lanterns do both', cv.width/2, cv.height/2+26);
+      cx.textAlign='left'; }
+  }
+
+  // ---- HUD -----------------------------------------------------------------
+  const $=id=>document.getElementById(id);
+  function updateHUD(){
+    const [name,dur,isNight]=PHASES[phaseIdx];
+    $('phaseTag').textContent=name+(isNight?' 🌑':' ☀');
+    $('phaseTag').style.color = isNight?'#b39ddb':'#e8b06a';
+    $('timeBar').style.width=Math.min(100,(time/dur)*100)+'%';
+    const r=Math.max(0,Math.round(stats.resolve));
+    $('resolveVal').textContent=r; $('resolveBar').style.width=r+'%';
+    $('resolveBar').style.background = r<30?'linear-gradient(90deg,#d1607f,#e69ab0)':'linear-gradient(90deg,#7fd18a,#bfe6a8)';
+    $('holdVal').textContent=stats.hold+'%'; $('holdBar').style.width=stats.hold+'%';
+    $('dayVal').textContent=day; $('oilVal').textContent=Math.floor(stats.oil);
+    $('seedVal').textContent=stats.seeds; $('coinVal').textContent=stats.coin; $('lanternVal').textContent=stats.lanterns;
+  }
+
+  // ---- buttons -------------------------------------------------------------
+  $('startBtn').onclick=()=>{ paused=false; log('Day begins.'); };
+  $('resetBtn').onclick=()=>{ reset(); };
+
+  reset(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
