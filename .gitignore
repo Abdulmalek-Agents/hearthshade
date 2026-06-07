@@ -1,0 +1,32 @@
+# ---- Unity ----
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/[Rr]ecordings/
+unity/.vs/
+unity/.idea/
+*.csproj
+*.unityproj
+*.sln
+*.user
+*.booproj
+*.svd
+*.pidb
+*.suo
+*.tmp
+*.apk
+*.aab
+*.unitypackage
+crashlog*.txt
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Node (none used; prototype is dependency-free) ----
+node_modules/
