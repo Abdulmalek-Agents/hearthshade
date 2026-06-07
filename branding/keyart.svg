@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="520" viewBox="0 0 1280 520" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <radialGradient id="sky" cx="50%" cy="78%" r="80%">
+      <stop offset="0%" stop-color="#3a2f4a"/>
+      <stop offset="45%" stop-color="#241d33"/>
+      <stop offset="100%" stop-color="#0b0d12"/>
+    </radialGradient>
+    <radialGradient id="hearthglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffd9a0" stop-opacity="0.95"/>
+      <stop offset="35%" stop-color="#e8b06a" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#e8b06a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lan" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffcf7a" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ffcf7a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gloamL" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0b0d12"/>
+      <stop offset="100%" stop-color="#0b0d12" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gloamR" x1="1" y1="0" x2="0" y2="0">
+      <stop offset="0%" stop-color="#0b0d12"/>
+      <stop offset="100%" stop-color="#0b0d12" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="520" fill="url(#sky)"/>
+
+  <!-- moon -->
+  <circle cx="1050" cy="110" r="46" fill="#cdd6e6" opacity="0.85"/>
+  <circle cx="1066" cy="100" r="46" fill="#241d33"/>
+
+  <!-- dark treeline -->
+  <g fill="#06070a" opacity="0.95">
+    <path d="M0 360 q40 -60 80 -10 q40 -70 80 -15 q40 -55 80 -5 l0 200 -320 0z"/>
+    <path d="M960 350 q40 -60 80 -10 q40 -70 80 -15 q40 -55 80 -5 q40 -60 80 -10 l0 220 -400 0z"/>
+  </g>
+
+  <!-- ground -->
+  <rect y="430" width="1280" height="90" fill="#13110f"/>
+  <ellipse cx="640" cy="450" rx="520" ry="60" fill="#1c1712"/>
+
+  <!-- hearth glow + cottage -->
+  <circle cx="640" cy="360" r="220" fill="url(#hearthglow)"/>
+  <g>
+    <rect x="556" y="300" width="168" height="120" fill="#2a1c14" stroke="#4a3322" stroke-width="3"/>
+    <polygon points="540,300 740,300 640,232" fill="#1f140d" stroke="#4a3322" stroke-width="3"/>
+    <rect x="612" y="356" width="40" height="64" fill="#0b0d12"/>
+    <rect x="576" y="330" width="34" height="30" fill="#ffd9a0" opacity="0.9"/>
+    <rect x="672" y="330" width="34" height="30" fill="#ffd9a0" opacity="0.9"/>
+    <!-- chimney smoke -->
+    <path d="M700 232 q14 -30 0 -54 q-14 -24 4 -50" fill="none" stroke="#6a6170" stroke-width="4" opacity="0.5"/>
+  </g>
+
+  <!-- lanterns with glow -->
+  <g>
+    <circle cx="420" cy="395" r="70" fill="url(#lan)"/>
+    <rect x="414" y="372" width="12" height="20" rx="3" fill="#ffcf7a"/>
+    <line x1="420" y1="360" x2="420" y2="374" stroke="#7a5a2a" stroke-width="3"/>
+    <circle cx="860" cy="395" r="70" fill="url(#lan)"/>
+    <rect x="854" y="372" width="12" height="20" rx="3" fill="#ffcf7a"/>
+    <line x1="860" y1="360" x2="860" y2="374" stroke="#7a5a2a" stroke-width="3"/>
+  </g>
+
+  <!-- crops in the light -->
+  <g fill="#9ccb53">
+    <circle cx="520" cy="430" r="6"/><circle cx="545" cy="436" r="7"/><circle cx="735" cy="434" r="7"/><circle cx="760" cy="430" r="6"/>
+  </g>
+
+  <!-- gloam creeping in from the edges -->
+  <rect x="0" y="0" width="360" height="520" fill="url(#gloamL)"/>
+  <rect x="920" y="0" width="360" height="520" fill="url(#gloamR)"/>
+
+  <!-- subtitle tag -->
+  <text x="640" y="496" text-anchor="middle" fill="#e9e2d0" font-size="22" letter-spacing="6" opacity="0.9">TEND THE LIGHT · MIND THE DARK</text>
+</svg>

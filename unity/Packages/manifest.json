@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "com.unity.render-pipelines.universal": "17.4.0",
+    "com.unity.inputsystem": "1.11.2",
+    "com.unity.cinemachine": "3.1.2",
+    "com.unity.ugui": "2.0.0",
+    "com.unity.nuget.newtonsoft-json": "3.2.1",
+    "com.unity.2d.tilemap": "1.0.0",
+    "com.unity.2d.sprite": "1.0.0",
+    "com.unity.modules.uielements": "1.0.0",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.test-framework": "1.4.5"
+  },
+  "//": "Unity 6000.4.4f1. URP 2D Renderer for cozy/dread lighting; Input System (new); Cinemachine 3; Newtonsoft for SaveSystem. Unity Sentis is intentionally omitted from the vertical slice (see unity/ProjectStructure.md)."
+}
